@@ -2,20 +2,26 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
-export interface ConsoleBlueprint {
-  id: string;
-  name: string;
-  cpu: string;
-  graphics: string;
-  audio: string;
-  cost: number;
-  developmentTime: number; // in days
-}
+import { CompetitorRelease, HISTORICAL_RELEASES } from '@/data/competitors';
+import { CustomCPU } from '@/data/technologies';
 
-export interface ActiveResearch {
-  blueprint: ConsoleBlueprint;
+export type TaskType = "research_part" | "develop_cpu" | "develop_console" | "production";
+
+export interface ActiveTask {
+  id: string;
+  type: TaskType;
+  name: string;
   startDate: number;
   endDate: number;
+  payload: any; // Context-dependent payload
+}
+
+export interface ReleasedConsole {
+  id: string;
+  name: string;
+  releaseDate: number;
+  unitsProduced: number;
+  starRating: number;
 }
 
 export interface GameState {
@@ -25,15 +31,19 @@ export interface GameState {
   money: number;
   gameDate: number; // Storing timestamp
   hasStarted: boolean;
-  blueprints: ConsoleBlueprint[];
-  activeResearch: ActiveResearch | null;
+  unlockedParts: string[]; // IDs of unlocked parts
+  customCPUs: CustomCPU[]; // Developed CPUs
+  draftConsole: any | null; // Work in progress console
+  releasedConsoles: ReleasedConsole[];
+  competitorReleases: CompetitorRelease[];
+  activeTask: ActiveTask | null;
 }
 
 interface GameContextType {
   gameState: GameState;
   startGame: (playerName: string, companyName: string, ability: string) => void;
   updateGameState: (updates: Partial<GameState>) => void;
-  startResearch: (blueprint: ConsoleBlueprint) => void;
+  startTask: (task: ActiveTask, cost: number) => void;
   resetGame: () => void;
 }
 
@@ -44,8 +54,12 @@ const defaultGameState: GameState = {
   money: 50000, // Initial money
   gameDate: new Date('1972-01-01T00:00:00').getTime(), // Start in 1972
   hasStarted: false,
-  blueprints: [],
-  activeResearch: null,
+  unlockedParts: ["ff_box", "col_bw", "ram_discrete", "stor_builtin"], // Some basic parts start unlocked
+  customCPUs: [],
+  draftConsole: null,
+  releasedConsoles: [],
+  competitorReleases: [],
+  activeTask: null,
 };
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -87,13 +101,48 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
           gameDate: prev.gameDate + ONE_DAY_MS,
         };
 
-        // Check if research is completed
-        if (nextState.activeResearch && nextState.gameDate >= nextState.activeResearch.endDate) {
+        // Handle Competitor Releases
+        const newCompReleases = HISTORICAL_RELEASES.filter(
+          (cr) => cr.releaseDate <= nextState.gameDate && !nextState.competitorReleases.find(existing => existing.id === cr.id)
+        );
+
+        if (newCompReleases.length > 0) {
           nextState = {
             ...nextState,
-            blueprints: [...nextState.blueprints, nextState.activeResearch.blueprint],
-            activeResearch: null,
+            competitorReleases: [...nextState.competitorReleases, ...newCompReleases]
           };
+        }
+
+        // Check if active task is completed
+        if (nextState.activeTask && nextState.gameDate >= nextState.activeTask.endDate) {
+          const task = nextState.activeTask;
+
+          if (task.type === "research_part") {
+            nextState = {
+              ...nextState,
+              unlockedParts: [...nextState.unlockedParts, task.payload.partId],
+              activeTask: null,
+            };
+          } else if (task.type === "develop_cpu") {
+            nextState = {
+              ...nextState,
+              customCPUs: [...nextState.customCPUs, task.payload.cpu],
+              activeTask: null,
+            };
+          } else if (task.type === "develop_console") {
+             nextState = {
+               ...nextState,
+               draftConsole: task.payload.consoleDraft,
+               activeTask: null,
+             }
+          } else if (task.type === "production") {
+             nextState = {
+               ...nextState,
+               releasedConsoles: [...nextState.releasedConsoles, task.payload.release],
+               draftConsole: null,
+               activeTask: null,
+             }
+          }
         }
 
         return nextState;
@@ -104,11 +153,17 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }, [gameState.hasStarted, isLoaded]);
 
   const startGame = (playerName: string, companyName: string, ability: string) => {
+    let startingMoney = defaultGameState.money;
+    if (ability === 'capital') {
+      startingMoney += 25000;
+    }
+
     setGameState({
       ...defaultGameState,
       playerName,
       companyName,
       ability,
+      money: startingMoney,
       hasStarted: true,
     });
   };
@@ -117,19 +172,13 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState((prev) => ({ ...prev, ...updates }));
   };
 
-  const startResearch = (blueprint: ConsoleBlueprint) => {
+  const startTask = (task: ActiveTask, cost: number) => {
     setGameState((prev) => {
-      // Check if they have enough money and no active research
-      if (prev.money >= blueprint.cost && !prev.activeResearch) {
-        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      if (prev.money >= cost && !prev.activeTask) {
         return {
           ...prev,
-          money: prev.money - blueprint.cost,
-          activeResearch: {
-            blueprint,
-            startDate: prev.gameDate,
-            endDate: prev.gameDate + (blueprint.developmentTime * ONE_DAY_MS)
-          }
+          money: prev.money - cost,
+          activeTask: task,
         };
       }
       return prev;
@@ -146,7 +195,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameState, startGame, updateGameState, startResearch, resetGame }}>
+    <GameContext.Provider value={{ gameState, startGame, updateGameState, startTask, resetGame }}>
       {children}
     </GameContext.Provider>
   );
