@@ -22,6 +22,7 @@ export interface ReleasedConsole {
   releaseDate: number;
   unitsProduced: number;
   starRating: number;
+  reviewerMessage: string;
 }
 
 export interface GameState {

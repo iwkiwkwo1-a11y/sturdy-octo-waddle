@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useGame, ActiveTask } from "@/context/GameContext";
 import { TECHNOLOGIES, TechCategory } from "@/data/technologies";
+import { getRandomReview } from "@/data/reviews";
 
 type Tab = "parts" | "develop" | "produce";
 
@@ -13,7 +14,7 @@ export default function ReleaseCenter() {
   const [activeTab, setActiveTab] = useState<Tab>("parts");
 
   const [customCpuName, setCustomCpuName] = useState("");
-  const [cpuArch, setCpuArch] = useState<"TTL" | "8-bit">("TTL");
+  const [cpuArch, setCpuArch] = useState<"TTL" | "8-bit" | "16-bit" | "32-bit" | "64-bit" | "Multi-core">("TTL");
   const [cpuClock, setCpuClock] = useState(1);
   const [cpuInstruction, setCpuInstruction] = useState<"Efisien" | "Seimbang" | "Performa">("Seimbang");
   const [cpuFab, setCpuFab] = useState<string>("");
@@ -56,9 +57,21 @@ export default function ReleaseCenter() {
     const fabTech = TECHNOLOGIES.find(t => t.id === cpuFab);
     if (!fabTech) return;
 
+    // Arch parameters mapping
+    const archParams = {
+      "TTL": { cost: 5000, time: 20, costPerMhz: 500, timePerMhz: 1, baseScore: 2, maxSafeClock: 2 },
+      "8-bit": { cost: 15000, time: 40, costPerMhz: 1500, timePerMhz: 2, baseScore: 5, maxSafeClock: 8 },
+      "16-bit": { cost: 45000, time: 60, costPerMhz: 2500, timePerMhz: 2, baseScore: 12, maxSafeClock: 30 },
+      "32-bit": { cost: 150000, time: 90, costPerMhz: 5000, timePerMhz: 1, baseScore: 25, maxSafeClock: 150 },
+      "64-bit": { cost: 500000, time: 140, costPerMhz: 8000, timePerMhz: 0.5, baseScore: 40, maxSafeClock: 800 },
+      "Multi-core": { cost: 2000000, time: 220, costPerMhz: 12000, timePerMhz: 0.2, baseScore: 70, maxSafeClock: 4000 }
+    };
+
+    const params = archParams[cpuArch];
+
     // Calculate complex logic
-    let baseCost = cpuArch === "TTL" ? 5000 : 15000;
-    let baseTime = cpuArch === "TTL" ? 20 : 40;
+    let baseCost = params.cost;
+    let baseTime = params.time;
 
     // Instruction set modifiers
     if (cpuInstruction === "Efisien") {
@@ -69,20 +82,24 @@ export default function ReleaseCenter() {
        baseTime *= 1.3;
     }
 
-    // Fab modifier
-    const fabModifier = fabTech.id === "fab_10um" ? 1 : fabTech.id === "fab_6um" ? 1.5 : 2.5;
+    // Fab modifier (newer fabs reduce relative cost multiplier but increase base, simplified here to scale with tech score)
+    const fabModifier = 1 + (fabTech.techScore / 20);
 
-    const costPerMHz = (cpuArch === "TTL" ? 500 : 2000) * fabModifier;
+    const costPerMHz = params.costPerMhz * fabModifier;
     const totalCost = Math.floor(baseCost + (cpuClock * costPerMHz));
-    const timeInDays = Math.floor(baseTime + (cpuClock * (cpuArch === "TTL" ? 1 : 2)));
+    const timeInDays = Math.floor(baseTime + (cpuClock * params.timePerMhz));
 
     // Bug logic: pushing clockspeed high on older architecture/fab increases bug chance
-    const maxSafeClock = cpuArch === "TTL" ? 2 : (fabTech.id === "fab_10um" ? 3 : fabTech.id === "fab_6um" ? 5 : 8);
+    // Safe clock increases with better fabrication
+    const fabTechScoreMulti = Math.max(1, fabTech.techScore / 5);
+    const maxSafeClock = params.maxSafeClock * fabTechScoreMulti;
     const isPushingLimits = cpuClock > maxSafeClock;
-    const bugChance = isPushingLimits ? 0.25 : 0.05; // 25% if pushed, 5% normally
+    const bugChance = isPushingLimits ? 0.35 : 0.05; // 35% if pushed, 5% normally
     const willBeBuggy = Math.random() < bugChance;
 
-    let techScore = (cpuArch === "TTL" ? 2 : 5) + cpuClock + fabTech.techScore;
+    // Normalize CPU Clock contribution to tech score based on era
+    const clockScoreContribution = Math.sqrt(cpuClock) * (params.baseScore / 10);
+    let techScore = Math.floor(params.baseScore + clockScoreContribution + fabTech.techScore);
     if (cpuInstruction === "Performa") techScore += 2;
     if (cpuInstruction === "Efisien") techScore -= 1;
 
@@ -203,34 +220,16 @@ export default function ReleaseCenter() {
 
     if (gameState.money < totalCost) return;
 
-    // Calculate Star Rating
-    // Baseline tech score expected per year
-    // 1970: expected ~5
-    // 1975: expected ~15
-    // 1980: expected ~25
+    // Calculate Star Rating dynamically
     const currentYear = new Date(gameState.gameDate).getFullYear();
-    const expectedScore = 5 + ((currentYear - 1970) * 2);
+    // Expected score scaling needs to be much steeper to account for modern tech up to 2026.
+    // E.g., 1970: ~5. 1990: ~75. 2026: ~300+
+    const yearDiff = currentYear - 1970;
+    const expectedScore = 5 + (yearDiff * 3) + (Math.pow(yearDiff, 1.5));
+
     const scoreRatio = gameState.draftConsole.techScore / expectedScore;
 
-    let stars = 3;
-    let reviewerMessage = "Konsol ini standar untuk standar saat ini.";
-
-    if (scoreRatio >= 1.5) {
-      stars = 5;
-      reviewerMessage = "Luar biasa! Teknologi ini jauh melampaui zamannya. Sebuah mahakarya!";
-    } else if (scoreRatio >= 1.2) {
-      stars = 4;
-      reviewerMessage = "Sangat bagus. Punya fitur canggih yang pasti disukai gamer.";
-    } else if (scoreRatio >= 0.8) {
-      stars = 3;
-      reviewerMessage = "Cukup layak. Tidak ada yang istimewa tapi berfungsi dengan baik.";
-    } else if (scoreRatio >= 0.5) {
-      stars = 2;
-      reviewerMessage = "Mengecewakan. Teknologinya terasa usang.";
-    } else {
-      stars = 1;
-      reviewerMessage = "Sangat buruk. Jangan harap laku di pasaran dengan spek purba seperti ini.";
-    }
+    const { stars, message: reviewerMessage } = getRandomReview(scoreRatio);
 
     const release = {
       id: `release_${Date.now()}`,
@@ -297,13 +296,13 @@ export default function ReleaseCenter() {
         </div>
 
         {/* Content Area */}
-        <div className="p-6 bg-white flex-1">
+        <div className="p-6 bg-white flex-1 overflow-y-auto">
           {activeTab === "parts" && (
             <div className="space-y-8">
 
               <section>
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Riset Komponen Standar</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-2 pb-4 border-b border-gray-100">
                   {TECHNOLOGIES.filter(t => t.yearAvailable <= currentYear).map(tech => {
                     const isUnlocked = gameState.unlockedParts.includes(tech.id);
                     return (
@@ -341,8 +340,12 @@ export default function ReleaseCenter() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1">Arsitektur Dasar</label>
                         <select value={cpuArch} onChange={(e) => setCpuArch(e.target.value as any)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500">
-                          <option value="TTL">Custom TTL Logic (Murah, Kuno)</option>
-                          {currentYear >= 1974 && <option value="8-bit">Mikroprosesor 8-bit (Mahal, Modern)</option>}
+                        <option value="TTL">Custom TTL Logic (Sangat Murah)</option>
+                        {currentYear >= 1974 && <option value="8-bit">Mikroprosesor 8-bit</option>}
+                        {currentYear >= 1985 && <option value="16-bit">Mikroprosesor 16-bit</option>}
+                        {currentYear >= 1993 && <option value="32-bit">Mikroprosesor 32-bit</option>}
+                        {currentYear >= 2000 && <option value="64-bit">Arsitektur 64-bit</option>}
+                        {currentYear >= 2005 && <option value="Multi-core">Arsitektur Multi-core</option>}
                         </select>
                       </div>
                     </div>
@@ -366,9 +369,23 @@ export default function ReleaseCenter() {
                       </div>
                     </div>
                     <div className="md:col-span-2 pt-2">
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Kecepatan Clock (MHz): {cpuClock} MHz</label>
-                      <input type="range" min="1" max={cpuArch === "TTL" ? 4 : 10} value={cpuClock} onChange={(e) => setCpuClock(parseInt(e.target.value))} disabled={!!gameState.activeTask} className="w-full mt-1" />
-                      <p className="text-xs text-orange-600 mt-1 italic">*Hati-hati: Kecepatan terlalu tinggi untuk teknologi lawas dapat menyebabkan bug sirkuit (hingga 25% peluang gagal).</p>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Kecepatan Clock (MHz): {cpuClock.toLocaleString()} MHz</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max={
+                        cpuArch === "TTL" ? 5 :
+                        cpuArch === "8-bit" ? 20 :
+                        cpuArch === "16-bit" ? 50 :
+                        cpuArch === "32-bit" ? 500 :
+                        cpuArch === "64-bit" ? 3000 : 5000
+                      }
+                      value={cpuClock}
+                      onChange={(e) => setCpuClock(parseInt(e.target.value))}
+                      disabled={!!gameState.activeTask}
+                      className="w-full mt-1"
+                    />
+                    <p className="text-xs text-orange-600 mt-1 italic">*Hati-hati: Kecepatan terlalu tinggi untuk teknologi lawas dapat menyebabkan bug sirkuit (hingga 35% peluang gagal).</p>
                     </div>
                   </div>
 
@@ -573,24 +590,13 @@ export default function ReleaseCenter() {
                   <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 mb-6">
                     <h3 className="font-bold text-blue-900 mb-3 flex items-center">
                       <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                      Review Pra-Rilis
+                      Prediksi Analis Pasar
                     </h3>
-                    <p className="text-blue-800 italic text-sm">
-                      {/* Calculate temporary rating for UI display without committing */}
-                      {(() => {
-                        const expectedScore = 5 + ((currentYear - 1970) * 2);
-                        const scoreRatio = gameState.draftConsole.techScore / expectedScore;
-                        if (scoreRatio >= 1.5) return "Luar biasa! Teknologi ini jauh melampaui zamannya. Sebuah mahakarya!";
-                        if (scoreRatio >= 1.2) return "Sangat bagus. Punya fitur canggih yang pasti disukai gamer.";
-                        if (scoreRatio >= 0.8) return "Cukup layak. Tidak ada yang istimewa tapi berfungsi dengan baik.";
-                        if (scoreRatio >= 0.5) return "Mengecewakan. Teknologinya terasa usang.";
-                        return "Sangat buruk. Jangan harap laku di pasaran dengan spek purba seperti ini.";
-                      })()}
-                    </p>
-                    <div className="flex mt-3 text-yellow-500">
+                    <div className="flex mt-3 mb-2 text-yellow-500">
                       {/* Show stars visually */}
                       {(() => {
-                        const expectedScore = 5 + ((currentYear - 1970) * 2);
+                        const yearDiff = currentYear - 1970;
+                        const expectedScore = 5 + (yearDiff * 3) + (Math.pow(yearDiff, 1.5));
                         const scoreRatio = gameState.draftConsole.techScore / expectedScore;
                         const stars = scoreRatio >= 1.5 ? 5 : scoreRatio >= 1.2 ? 4 : scoreRatio >= 0.8 ? 3 : scoreRatio >= 0.5 ? 2 : 1;
                         return Array(5).fill(0).map((_, i) => (
@@ -598,6 +604,9 @@ export default function ReleaseCenter() {
                         ));
                       })()}
                     </div>
+                    <p className="text-blue-800 italic text-sm">
+                      "Rating bintang didasarkan pada perbandingan teknologi konsol ini dengan tren pasar di tahun {currentYear}. Komentar final akan diberikan saat produk dirilis."
+                    </p>
                   </div>
 
                   <div>

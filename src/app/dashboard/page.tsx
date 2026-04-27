@@ -167,7 +167,7 @@ export default function Dashboard() {
               <h2 className="font-semibold text-gray-800 border-b pb-2 mb-3">Produk Di Pasaran</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {gameState.releasedConsoles.map(rc => (
-                  <div key={rc.id} className="p-3 border border-green-200 bg-green-50 rounded-lg">
+                  <div key={rc.id} className="p-3 border border-green-200 bg-green-50 rounded-lg relative group">
                     <div className="flex justify-between items-start">
                       <h3 className="font-bold text-green-900">{rc.name}</h3>
                       <div className="flex text-yellow-500">
@@ -178,6 +178,11 @@ export default function Dashboard() {
                     </div>
                     <p className="text-xs text-green-700 mt-1">Terjual: {rc.unitsProduced.toLocaleString()} unit</p>
                     <p className="text-xs text-gray-500 mt-0.5">Rilis: {formatDate(rc.releaseDate)}</p>
+
+                    {/* Tooltip for Reviewer Message */}
+                    <div className="absolute opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-xs rounded p-2 z-10 w-full left-0 bottom-full mb-2 pointer-events-none">
+                      "{rc.reviewerMessage}"
+                    </div>
                   </div>
                 ))}
               </div>
