@@ -2,12 +2,19 @@
 > temp-app@0.1.0 dev
 > next dev
 
+⚠ Port 3000 is in use by an unknown process, using available port 3001 instead.
 ▲ Next.js 16.2.4 (Turbopack)
-- Local:         http://localhost:3000
-- Network:       http://192.168.0.2:3000
-✓ Ready in 554ms
+- Local:         http://localhost:3001
+- Network:       http://192.168.0.2:3001
+✓ Ready in 1729ms
+⨯ Another next dev server is already running.
 
-○ Compiling / ...
- GET / 200 in 7.3s (next.js: 6.9s, application-code: 450ms)
- GET /dashboard 200 in 635ms (next.js: 543ms, application-code: 92ms)
- GET /dashboard 200 in 58ms (next.js: 4ms, application-code: 53ms)
+- Local:        http://localhost:3000
+- PID:          47326
+- Dir:          /app
+- Log GET / 200 in 1012ms (next.js: 619ms, application-code: 393ms)
+ GET /dashboard 200 in 107ms (next.js: 33ms, application-code: 74ms)
+ GET /dashboard 200 in 50ms (next.js: 8ms, application-code: 42ms)
+○ Compiling /dashboard/research ...
+ GET /dashboard/research 200 in 4.2s (next.js: 4.1s, application-code: 61ms)
+ GET /dashboard 200 in 64ms (next.js: 4ms, application-code: 60ms)

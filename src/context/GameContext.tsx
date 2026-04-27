@@ -2,6 +2,22 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
+export interface ConsoleBlueprint {
+  id: string;
+  name: string;
+  cpu: string;
+  graphics: string;
+  audio: string;
+  cost: number;
+  developmentTime: number; // in days
+}
+
+export interface ActiveResearch {
+  blueprint: ConsoleBlueprint;
+  startDate: number;
+  endDate: number;
+}
+
 export interface GameState {
   playerName: string;
   companyName: string;
@@ -9,12 +25,15 @@ export interface GameState {
   money: number;
   gameDate: number; // Storing timestamp
   hasStarted: boolean;
+  blueprints: ConsoleBlueprint[];
+  activeResearch: ActiveResearch | null;
 }
 
 interface GameContextType {
   gameState: GameState;
   startGame: (playerName: string, companyName: string, ability: string) => void;
   updateGameState: (updates: Partial<GameState>) => void;
+  startResearch: (blueprint: ConsoleBlueprint) => void;
   resetGame: () => void;
 }
 
@@ -25,6 +44,8 @@ const defaultGameState: GameState = {
   money: 50000, // Initial money
   gameDate: new Date('1972-01-01T00:00:00').getTime(), // Start in 1972
   hasStarted: false,
+  blueprints: [],
+  activeResearch: null,
 };
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -60,10 +81,23 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
     const interval = setInterval(() => {
-      setGameState((prev) => ({
-        ...prev,
-        gameDate: prev.gameDate + ONE_DAY_MS,
-      }));
+      setGameState((prev) => {
+        let nextState = {
+          ...prev,
+          gameDate: prev.gameDate + ONE_DAY_MS,
+        };
+
+        // Check if research is completed
+        if (nextState.activeResearch && nextState.gameDate >= nextState.activeResearch.endDate) {
+          nextState = {
+            ...nextState,
+            blueprints: [...nextState.blueprints, nextState.activeResearch.blueprint],
+            activeResearch: null,
+          };
+        }
+
+        return nextState;
+      });
     }, 1000); // every 1 second
 
     return () => clearInterval(interval);
@@ -83,6 +117,25 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
     setGameState((prev) => ({ ...prev, ...updates }));
   };
 
+  const startResearch = (blueprint: ConsoleBlueprint) => {
+    setGameState((prev) => {
+      // Check if they have enough money and no active research
+      if (prev.money >= blueprint.cost && !prev.activeResearch) {
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+        return {
+          ...prev,
+          money: prev.money - blueprint.cost,
+          activeResearch: {
+            blueprint,
+            startDate: prev.gameDate,
+            endDate: prev.gameDate + (blueprint.developmentTime * ONE_DAY_MS)
+          }
+        };
+      }
+      return prev;
+    });
+  };
+
   const resetGame = () => {
     setGameState(defaultGameState);
   };
@@ -93,7 +146,7 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
   }
 
   return (
-    <GameContext.Provider value={{ gameState, startGame, updateGameState, resetGame }}>
+    <GameContext.Provider value={{ gameState, startGame, updateGameState, startResearch, resetGame }}>
       {children}
     </GameContext.Provider>
   );
