@@ -5,7 +5,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { CompetitorRelease, HISTORICAL_RELEASES } from '@/data/competitors';
 import { CustomCPU } from '@/data/technologies';
 
-export type TaskType = "research_part" | "develop_cpu" | "develop_console" | "production";
+export type TaskType = "research_part" | "develop_cpu" | "fix_cpu_bug" | "develop_console" | "production";
 
 export interface ActiveTask {
   id: string;
@@ -54,7 +54,10 @@ const defaultGameState: GameState = {
   money: 50000, // Initial money
   gameDate: new Date('1972-01-01T00:00:00').getTime(), // Start in 1972
   hasStarted: false,
-  unlockedParts: ["ff_box", "col_bw", "ram_discrete", "stor_builtin"], // Some basic parts start unlocked
+  unlockedParts: [
+    "ff_box", "col_bw", "ram_discrete", "stor_builtin",
+    "aud_none", "ctrl_dial", "med_none", "fab_10um"
+  ], // Initial basic unlocked parts
   customCPUs: [],
   draftConsole: null,
   releasedConsoles: [],
@@ -129,6 +132,15 @@ export const GameProvider = ({ children }: { children: ReactNode }) => {
               customCPUs: [...nextState.customCPUs, task.payload.cpu],
               activeTask: null,
             };
+          } else if (task.type === "fix_cpu_bug") {
+             const cpuId = task.payload.cpuId;
+             nextState = {
+               ...nextState,
+               customCPUs: nextState.customCPUs.map(cpu =>
+                 cpu.id === cpuId ? { ...cpu, isBuggy: false } : cpu
+               ),
+               activeTask: null,
+             };
           } else if (task.type === "develop_console") {
              nextState = {
                ...nextState,

@@ -15,6 +15,8 @@ export default function ReleaseCenter() {
   const [customCpuName, setCustomCpuName] = useState("");
   const [cpuArch, setCpuArch] = useState<"TTL" | "8-bit">("TTL");
   const [cpuClock, setCpuClock] = useState(1);
+  const [cpuInstruction, setCpuInstruction] = useState<"Efisien" | "Seimbang" | "Performa">("Seimbang");
+  const [cpuFab, setCpuFab] = useState<string>("");
 
   // Tab 2 State
   const [consoleName, setConsoleName] = useState("");
@@ -23,6 +25,9 @@ export default function ReleaseCenter() {
   const [selectedCol, setSelectedCol] = useState("");
   const [selectedRam, setSelectedRam] = useState("");
   const [selectedStor, setSelectedStor] = useState("");
+  const [selectedAud, setSelectedAud] = useState("");
+  const [selectedCtrl, setSelectedCtrl] = useState("");
+  const [selectedMed, setSelectedMed] = useState("");
 
   // Tab 3 State
   const [productionUnits, setProductionUnits] = useState(1000);
@@ -46,21 +51,52 @@ export default function ReleaseCenter() {
 
   const handleDevelopCustomCpu = () => {
     if (gameState.activeTask) return;
-    if (!customCpuName.trim()) return;
+    if (!customCpuName.trim() || !cpuFab) return;
 
-    const baseCost = cpuArch === "TTL" ? 5000 : 15000;
-    const costPerMHz = cpuArch === "TTL" ? 500 : 2000;
-    const totalCost = baseCost + (cpuClock * costPerMHz);
-    const timeInDays = cpuArch === "TTL" ? 20 + cpuClock : 40 + (cpuClock * 2);
+    const fabTech = TECHNOLOGIES.find(t => t.id === cpuFab);
+    if (!fabTech) return;
+
+    // Calculate complex logic
+    let baseCost = cpuArch === "TTL" ? 5000 : 15000;
+    let baseTime = cpuArch === "TTL" ? 20 : 40;
+
+    // Instruction set modifiers
+    if (cpuInstruction === "Efisien") {
+       baseCost *= 0.8;
+       baseTime *= 0.9;
+    } else if (cpuInstruction === "Performa") {
+       baseCost *= 1.5;
+       baseTime *= 1.3;
+    }
+
+    // Fab modifier
+    const fabModifier = fabTech.id === "fab_10um" ? 1 : fabTech.id === "fab_6um" ? 1.5 : 2.5;
+
+    const costPerMHz = (cpuArch === "TTL" ? 500 : 2000) * fabModifier;
+    const totalCost = Math.floor(baseCost + (cpuClock * costPerMHz));
+    const timeInDays = Math.floor(baseTime + (cpuClock * (cpuArch === "TTL" ? 1 : 2)));
+
+    // Bug logic: pushing clockspeed high on older architecture/fab increases bug chance
+    const maxSafeClock = cpuArch === "TTL" ? 2 : (fabTech.id === "fab_10um" ? 3 : fabTech.id === "fab_6um" ? 5 : 8);
+    const isPushingLimits = cpuClock > maxSafeClock;
+    const bugChance = isPushingLimits ? 0.25 : 0.05; // 25% if pushed, 5% normally
+    const willBeBuggy = Math.random() < bugChance;
+
+    let techScore = (cpuArch === "TTL" ? 2 : 5) + cpuClock + fabTech.techScore;
+    if (cpuInstruction === "Performa") techScore += 2;
+    if (cpuInstruction === "Efisien") techScore -= 1;
 
     const cpu = {
       id: `cpu_${Date.now()}`,
       name: customCpuName,
       architecture: cpuArch,
+      instructionSet: cpuInstruction,
+      fabricationId: cpuFab,
       clockSpeed: cpuClock,
       costToDevelop: totalCost,
       timeToDevelop: timeInDays,
-      techScore: (cpuArch === "TTL" ? 2 : 5) + cpuClock
+      techScore: techScore,
+      isBuggy: willBeBuggy
     };
 
     const task: ActiveTask = {
@@ -75,28 +111,50 @@ export default function ReleaseCenter() {
     setCustomCpuName("");
   };
 
+  const handleFixCpuBug = (cpuId: string, name: string) => {
+    if (gameState.activeTask) return;
+
+    const cost = 5000;
+    const timeInDays = 15;
+
+    const task: ActiveTask = {
+      id: `task_${Date.now()}`,
+      type: "fix_cpu_bug",
+      name: `Revisi Bug: ${name}`,
+      startDate: gameState.gameDate,
+      endDate: gameState.gameDate + (timeInDays * 24 * 60 * 60 * 1000),
+      payload: { cpuId }
+    };
+    startTask(task, cost);
+  }
+
   const handleDevelopConsole = () => {
     if (gameState.activeTask) return;
-    if (!consoleName.trim() || !selectedCpu || !selectedFf || !selectedCol || !selectedRam || !selectedStor) return;
+    if (!consoleName.trim() || !selectedCpu || !selectedFf || !selectedCol || !selectedRam || !selectedStor || !selectedAud || !selectedCtrl || !selectedMed) return;
 
     const cpu = gameState.customCPUs.find(c => c.id === selectedCpu);
+    if (cpu?.isBuggy) return; // double check
+
     const ff = TECHNOLOGIES.find(t => t.id === selectedFf);
     const col = TECHNOLOGIES.find(t => t.id === selectedCol);
     const ram = TECHNOLOGIES.find(t => t.id === selectedRam);
     const stor = TECHNOLOGIES.find(t => t.id === selectedStor);
+    const aud = TECHNOLOGIES.find(t => t.id === selectedAud);
+    const ctrl = TECHNOLOGIES.find(t => t.id === selectedCtrl);
+    const med = TECHNOLOGIES.find(t => t.id === selectedMed);
 
-    if (!cpu || !ff || !col || !ram || !stor) return;
+    if (!cpu || !ff || !col || !ram || !stor || !aud || !ctrl || !med) return;
 
     const baseCost = 25000; // Base cost for prototyping and ecosystem development
     const baseTime = 60; // 60 days to develop ecosystem
 
     // Total tech score is sum of parts
-    const totalTechScore = cpu.techScore + ff.techScore + col.techScore + ram.techScore + stor.techScore;
+    const totalTechScore = cpu.techScore + ff.techScore + col.techScore + ram.techScore + stor.techScore + aud.techScore + ctrl.techScore + med.techScore;
 
     const consoleDraft = {
       id: `draft_${Date.now()}`,
       name: consoleName,
-      components: { cpu: cpu.name, ff: ff.name, col: col.name, ram: ram.name, stor: stor.name },
+      components: { cpu: cpu.name, ff: ff.name, col: col.name, ram: ram.name, stor: stor.name, aud: aud.name, ctrl: ctrl.name, med: med.name },
       techScore: totalTechScore,
       durabilityTested: false
     };
@@ -274,39 +332,77 @@ export default function ReleaseCenter() {
               <section>
                 <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Desain Chipset (CPU) Kustom</h2>
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Nama Chipset</label>
-                      <input type="text" value={customCpuName} onChange={(e) => setCustomCpuName(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500" placeholder="Cth: Z-80 Custom" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Nama Chipset</label>
+                        <input type="text" value={customCpuName} onChange={(e) => setCustomCpuName(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500" placeholder="Cth: Z-80 Custom" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Arsitektur Dasar</label>
+                        <select value={cpuArch} onChange={(e) => setCpuArch(e.target.value as any)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500">
+                          <option value="TTL">Custom TTL Logic (Murah, Kuno)</option>
+                          {currentYear >= 1974 && <option value="8-bit">Mikroprosesor 8-bit (Mahal, Modern)</option>}
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Arsitektur Dasar</label>
-                      <select value={cpuArch} onChange={(e) => setCpuArch(e.target.value as any)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500">
-                        <option value="TTL">Custom TTL Logic (Murah)</option>
-                        {currentYear >= 1974 && <option value="8-bit">Mikroprosesor 8-bit (Mahal)</option>}
-                      </select>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Ukuran Fabrikasi</label>
+                        <select value={cpuFab} onChange={(e) => setCpuFab(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500">
+                          <option value="">-- Pilih Teknologi Fabrikasi --</option>
+                          {TECHNOLOGIES.filter(t => t.category === "fabrication" && gameState.unlockedParts.includes(t.id)).map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">Fokus Set Instruksi</label>
+                        <select value={cpuInstruction} onChange={(e) => setCpuInstruction(e.target.value as any)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:border-blue-500">
+                          <option value="Seimbang">Seimbang (Standar)</option>
+                          <option value="Efisien">Efisien (Biaya & Waktu -10%, Skor -1)</option>
+                          <option value="Performa">Performa (Biaya & Waktu +50%, Skor +2)</option>
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">Kecepatan (MHz): {cpuClock} MHz</label>
-                      <input type="range" min="1" max={cpuArch === "TTL" ? 3 : 8} value={cpuClock} onChange={(e) => setCpuClock(parseInt(e.target.value))} disabled={!!gameState.activeTask} className="w-full mt-2" />
+                    <div className="md:col-span-2 pt-2">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">Kecepatan Clock (MHz): {cpuClock} MHz</label>
+                      <input type="range" min="1" max={cpuArch === "TTL" ? 4 : 10} value={cpuClock} onChange={(e) => setCpuClock(parseInt(e.target.value))} disabled={!!gameState.activeTask} className="w-full mt-1" />
+                      <p className="text-xs text-orange-600 mt-1 italic">*Hati-hati: Kecepatan terlalu tinggi untuk teknologi lawas dapat menyebabkan bug sirkuit (hingga 25% peluang gagal).</p>
                     </div>
                   </div>
+
                   <button
-                    disabled={!!gameState.activeTask || !customCpuName.trim()}
+                    disabled={!!gameState.activeTask || !customCpuName.trim() || !cpuFab}
                     onClick={handleDevelopCustomCpu}
-                    className="w-full py-2 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-medium text-sm rounded-lg transition-colors"
+                    className="w-full py-3 bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-bold text-sm rounded-lg transition-colors shadow-sm"
                   >
-                    Mulai Desain Chipset
+                    Mulai Desain Chipset (Akan Mengkalkulasi Biaya)
                   </button>
 
                   {gameState.customCPUs.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <p className="text-xs font-semibold text-gray-500 mb-2">Chipset Anda:</p>
-                      <div className="flex flex-wrap gap-2">
+                    <div className="mt-6 pt-4 border-t border-gray-200">
+                      <p className="text-sm font-bold text-gray-800 mb-3">Inventaris Chipset Anda:</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {gameState.customCPUs.map(cpu => (
-                          <span key={cpu.id} className="text-xs px-2 py-1 bg-gray-200 text-gray-800 rounded border border-gray-300">
-                            {cpu.name} ({cpu.architecture}, {cpu.clockSpeed}MHz)
-                          </span>
+                          <div key={cpu.id} className={`p-3 border rounded-lg ${cpu.isBuggy ? 'bg-red-50 border-red-300' : 'bg-gray-100 border-gray-300'}`}>
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="font-bold text-sm text-gray-900">{cpu.name}</span>
+                              {cpu.isBuggy && <span className="text-xs font-bold text-white bg-red-500 px-1.5 py-0.5 rounded">BUGGY</span>}
+                            </div>
+                            <div className="text-xs text-gray-600">
+                              {cpu.architecture} • {cpu.clockSpeed}MHz • {cpu.instructionSet}
+                            </div>
+                            {cpu.isBuggy && (
+                              <button
+                                onClick={() => handleFixCpuBug(cpu.id, cpu.name)}
+                                disabled={!!gameState.activeTask || gameState.money < 5000}
+                                className="mt-2 w-full text-xs font-semibold bg-red-100 hover:bg-red-200 text-red-700 py-1.5 rounded border border-red-200 transition-colors"
+                              >
+                                Revisi Bug ($5,000 / 15 Hari)
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -332,10 +428,10 @@ export default function ReleaseCenter() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Chipset / CPU</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Chipset / CPU (Kustom)</label>
                         <select value={selectedCpu} onChange={(e) => setSelectedCpu(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md outline-none">
                           <option value="">-- Pilih CPU Kustom --</option>
-                          {gameState.customCPUs.map(c => <option key={c.id} value={c.id}>{c.name} ({c.clockSpeed}MHz)</option>)}
+                          {gameState.customCPUs.filter(c => !c.isBuggy).map(c => <option key={c.id} value={c.id}>{c.name} ({c.clockSpeed}MHz)</option>)}
                         </select>
                       </div>
 
@@ -370,13 +466,37 @@ export default function ReleaseCenter() {
                           {TECHNOLOGIES.filter(t => t.category === "storage" && gameState.unlockedParts.includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
                       </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Sistem Audio</label>
+                        <select value={selectedAud} onChange={(e) => setSelectedAud(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md outline-none">
+                          <option value="">-- Pilih Audio --</option>
+                          {TECHNOLOGIES.filter(t => t.category === "audio" && gameState.unlockedParts.includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Input / Kontroler</label>
+                        <select value={selectedCtrl} onChange={(e) => setSelectedCtrl(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md outline-none">
+                          <option value="">-- Pilih Kontroler --</option>
+                          {TECHNOLOGIES.filter(t => t.category === "controller" && gameState.unlockedParts.includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Bonus Paket Rilis</label>
+                        <select value={selectedMed} onChange={(e) => setSelectedMed(e.target.value)} disabled={!!gameState.activeTask} className="w-full px-3 py-2 border border-gray-300 rounded-md outline-none">
+                          <option value="">-- Pilih Ekstra --</option>
+                          {TECHNOLOGIES.filter(t => t.category === "media" && gameState.unlockedParts.includes(t.id)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
                     </div>
 
                     <div className="pt-4 border-t border-gray-200 flex items-center justify-between">
                       <div className="text-sm text-gray-600">Biaya Pengembangan Ekosistem: <span className="font-bold text-gray-900">$25,000</span> (60 Hari)</div>
                       <button
                         onClick={handleDevelopConsole}
-                        disabled={!!gameState.activeTask || !consoleName || !selectedCpu || !selectedFf || !selectedCol || !selectedRam || !selectedStor || gameState.money < 25000}
+                        disabled={!!gameState.activeTask || !consoleName || !selectedCpu || !selectedFf || !selectedCol || !selectedRam || !selectedStor || !selectedAud || !selectedCtrl || !selectedMed || gameState.money < 25000}
                         className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-bold rounded-lg transition-colors"
                       >
                         Mulai Pengembangan Ekosistem
@@ -398,6 +518,9 @@ export default function ReleaseCenter() {
                     <div><span className="font-semibold">Grafis:</span> {gameState.draftConsole.components.col}</div>
                     <div><span className="font-semibold">RAM:</span> {gameState.draftConsole.components.ram}</div>
                     <div><span className="font-semibold">Penyimpanan:</span> {gameState.draftConsole.components.stor}</div>
+                    <div><span className="font-semibold">Audio:</span> {gameState.draftConsole.components.aud}</div>
+                    <div><span className="font-semibold">Kontroler:</span> {gameState.draftConsole.components.ctrl}</div>
+                    <div><span className="font-semibold">Media Ekstra:</span> {gameState.draftConsole.components.med}</div>
                   </div>
 
                   <div className="flex gap-4">
